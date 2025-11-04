@@ -57,46 +57,55 @@ jobs:
           with:
            fetch-depth: 0
 
-        - name: 'Configure Git, Validate Options with Full Verbosity'
+        - name: 'Sanitize Token, Configure Git, and Validate'
           env:
             CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
-            GIT_CURL_VERBOSE: "1" # This is the magic flag to debug git's http requests
           run: |
-            # Step 1: Configure Git.
+            # Step 1: Sanitize the token to prevent shell syntax errors.
+            echo "--- Sanitizing and verifying token ---"
             if [ -z "$CLONE_TOKEN" ]; then
-              echo "Error: CLONE_TOKEN secret is not set or empty."
+              echo "❌ Error: CLONE_TOKEN secret is not set or empty."
               exit 1
             fi
-            git config --global url."https://x-access-token:${CLONE_TOKEN}@github.com/".insteadOf "https://github.com/"
             
-            # Step 2: Verify that the configuration was actually set.
-            echo "--- Verifying git configuration ---"
-            git config --list | grep "insteadOf"
-            echo "-----------------------------------"
+            # Remove all characters that are NOT letters, numbers, or underscore.
+            CLEAN_TOKEN=$(echo -n "$CLONE_TOKEN" | tr -dc '[:alnum:]_')
+            
+            # Verify the length of the sanitized token. It MUST be 40.
+            if [ "${#CLEAN_TOKEN}" -ne 40 ]; then
+              echo "❌ FATAL ERROR: The CLONE_TOKEN secret is corrupted."
+              echo "Expected length: 40. Actual length after sanitizing: ${#CLEAN_TOKEN}."
+              echo "Please delete and recreate the secret, ensuring no extra characters are copied."
+              exit 1
+            fi
+            echo "✅ Token has been sanitized and has the correct length (40)."
 
-            # Step 3: Now, perform the validations. The GIT_CURL_VERBOSE flag will print all http details.
-            echo "--- Validating sources with verbose output ---"
+            # Step 2: Configure Git using the SANITIZED token.
+            git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
+            echo "Git configured to use the token."
+
+            # Step 3: Perform validations.
+            echo "--- Validating sources ---"
             if
                 if git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
-                    echo "Kernel source seems ok."
+                    echo "✅ Kernel source seems ok."
                 elif git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" > /dev/null; then
-                    echo "Repo is valid, but branch is wrong. Aborting."
+                    echo "❌ Repo is valid, but branch is wrong. Aborting."
                     exit 1
                 else
-                    echo "Invalid kernel source. Check URL or token permissions. Aborting."
+                    echo "❌ Invalid kernel source. Check URL or token permissions. Aborting."
                     exit 1
                 fi
-                # ... (resto de validaciones) ...
                 if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
-                    echo "KernelSU source seems ok."
+                    echo "✅ KernelSU source seems ok."
                 fi
                 if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
-                    if curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-disposition: attachment" > /dev/null || curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-type: application-octet-stream" > /dev/null; then
-                        echo "Toolchain link is a direct download."
+                    if curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-disposition: attachment" > /dev/null || curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-type: application/octet-stream" > /dev/null; then
+                        echo "✅ Toolchain link is a direct download."
                     fi
                 fi
             then
-                echo "All checks passed."
+                echo "✅ All checks passed."
             fi
 
         - name: 'Debloat the OS'
@@ -175,14 +184,13 @@ jobs:
             sudo make -j$(nproc --all) install
 
         - name: 'Clone kernel source'
-          env:
-            GIT_CURL_VERBOSE: "1" # Add verbose flag here as well for the clone
           run: |
-            echo "Starting kernel clone... Git will use the configured token automatically."
+            # This step no longer needs any special logic, git is already configured.
+            echo "Starting kernel clone..."
             git clone --depth=1 -b "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" "${{ github.event.inputs.KERNEL_GIT }}" ./kernel-src
             
             if [ $? -ne 0 ]; then
-              echo "Clone failed. Check URL, branch or token permissions."
+              echo "Clone failed. This is unexpected as validation passed."
               exit 1
             fi
 
