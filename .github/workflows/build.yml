@@ -52,61 +52,26 @@ jobs:
     build:
         runs-on: ubuntu-latest
         steps:
-        - name: Checkout Repository
+        - name: Checkout Workflow Repository
+          uses: actions/checkout@v4
+
+        - name: 'Clone Kernel Source using official action'
           uses: actions/checkout@v4
           with:
-           fetch-depth: 0
-
-        - name: 'Sanitize Token, Configure Git, and Validate'
-          env:
-            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
-          run: |
-            # Step 1: Sanitize the token to prevent shell syntax errors.
-            echo "--- Sanitizing and verifying token ---"
-            if [ -z "$CLONE_TOKEN" ]; then
-              echo "❌ Error: CLONE_TOKEN secret is not set or empty."
-              exit 1
-            fi
+            # This specifies which repository to clone. We use the input from the user.
+            repository: ${{ github.event.inputs.KERNEL_GIT }}
             
-            # Remove all characters that are NOT letters, numbers, or underscore.
-            CLEAN_TOKEN=$(echo -n "$CLONE_TOKEN" | tr -dc '[:alnum:]_')
+            # This is your Personal Access Token.
+            token: ${{ secrets.CLONE_TOKEN }}
             
-            # Verify the length of the sanitized token. It MUST be 40.
-            if [ "${#CLEAN_TOKEN}" -ne 40 ]; then
-              echo "❌ FATAL ERROR: The CLONE_TOKEN secret is corrupted."
-              echo "Expected length: 40. Actual length after sanitizing: ${#CLEAN_TOKEN}."
-              echo "Please delete and recreate the secret, ensuring no extra characters are copied."
-              exit 1
-            fi
-            echo "✅ Token has been sanitized and has the correct length (40)."
-
-            # Step 2: Configure Git using the SANITIZED token.
-            git config --global url."https://x-access-token:${CLEAN_TOKEN}@github.com/".insteadOf "https://github.com/"
-            echo "Git configured to use the token."
-
-            # Step 3: Perform validations.
-            echo "--- Validating sources ---"
-            if
-                if git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
-                    echo "✅ Kernel source seems ok."
-                elif git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" > /dev/null; then
-                    echo "❌ Repo is valid, but branch is wrong. Aborting."
-                    exit 1
-                else
-                    echo "❌ Invalid kernel source. Check URL or token permissions. Aborting."
-                    exit 1
-                fi
-                if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
-                    echo "✅ KernelSU source seems ok."
-                fi
-                if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
-                    if curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-disposition: attachment" > /dev/null || curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-type: application/octet-stream" > /dev/null; then
-                        echo "✅ Toolchain link is a direct download."
-                    fi
-                fi
-            then
-                echo "✅ All checks passed."
-            fi
+            # This is the branch to check out.
+            ref: ${{ github.event.inputs.KERNEL_GIT_BRANCH }}
+            
+            # This tells the action where to put the cloned repository.
+            path: './kernel-src'
+            
+            # Equivalent to --depth=1 for a faster clone.
+            fetch-depth: 1
 
         - name: 'Debloat the OS'
           run: |
@@ -182,19 +147,6 @@ jobs:
             ./configure
             make -j$(nproc --all)
             sudo make -j$(nproc --all) install
-
-        - name: 'Clone kernel source'
-          run: |
-            # This step no longer needs any special logic, git is already configured.
-            echo "Starting kernel clone..."
-            git clone --depth=1 -b "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" "${{ github.event.inputs.KERNEL_GIT }}" ./kernel-src
-            
-            if [ $? -ne 0 ]; then
-              echo "Clone failed. This is unexpected as validation passed."
-              exit 1
-            fi
-
-            echo "Kernel clone finished."
 
         - name: 'Clone any submodules if present'
           working-directory: './kernel-src'
