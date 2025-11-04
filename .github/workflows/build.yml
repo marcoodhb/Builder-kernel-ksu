@@ -6,11 +6,11 @@ on:
             KSU_GIT:
                 description: 'Link to KernelSU git repository (leave it be for KernelSU-Next or if unsure):'
                 required: false
-                default: 'https://github.com/KernelSU-Next/KernelSU-Next.git'
+                default: 'https://github.com/backslashxx/KernelSU.git'
             KSU_GIT_BRANCH:
                 description: 'Preferred branch of the preferred KernelSU git repository (leave it be for KernelSU-Next, otherwise must define):'
                 required: false
-                default: 'next'
+                default: 'master'
             INCLUDE_SUSFS:
                 type: boolean
                 description: 'Build with SuSFS (leave it be if unsure)?'
@@ -60,11 +60,10 @@ jobs:
         - name: 'Validate workflow options'
           run: |
             KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
+            # If it's a github repo, inject the Personal Access Token for validation.
             if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-                if ! git ls-remote --quiet "$KERNEL_URL" &>/dev/null; then
-                    echo "Private repo detected. Using token to validate."
-                    KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.GITHUB_TOKEN }}@#")
-                fi
+                echo "GitHub repo detected. Using CLONE_TOKEN to validate."
+                KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.CLONE_TOKEN }}@#")
             fi
 
             if
@@ -74,7 +73,7 @@ jobs:
                     echo "Repo is valid, but branch is wrong. Aborting."
                     exit 1
                 else
-                    echo "Invalid kernel source. Aborting."
+                    echo "Invalid kernel source. Check URL or token permissions. Aborting."
                     exit 1
                 fi
                 if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
@@ -178,9 +177,9 @@ jobs:
             fi
             }
 
-            if [ ! -z ${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }} ]; then
+            if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
                 mkdir ./compiler-toolchain/
-                wget ${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }} -P ./compiler-toolchain/
+                wget "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" -P ./compiler-toolchain/
 
                 cd ./compiler-toolchain/
                 extract ./*
@@ -200,14 +199,10 @@ jobs:
           run: |
             KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
 
+            # If it's a github repo, inject the Personal Access Token for authentication.
             if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-              echo "GitHub repo detected."
-              if git ls-remote "$KERNEL_URL" &>/dev/null; then
-                echo "Public repo, cloning."
-              else
-                echo "Private repo, using token to clone."
-                KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.GITHUB_TOKEN }}@#")
-              fi
+              echo "GitHub repo detected. Using CLONE_TOKEN for authentication."
+              KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.CLONE_TOKEN }}@#")
             else
               echo "External repo detected."
             fi
@@ -291,8 +286,8 @@ jobs:
             export PATH=$CLANG_DIR:$PATH
 
             # Generate kernel config using make
-            if [ ${{ github.event.inputs.KERNEL_COMPILER }} == 'Clang/LLVM' ]; then
-                if [ ! -z ${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }} ]; then
+            if [ "${{ github.event.inputs.KERNEL_COMPILER }}" == 'Clang/LLVM' ]; then
+                if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
                     make ARCH=${{ github.event.inputs.KERNEL_ARCH }} SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang LLVM=1 LLVM_IAS=1 LD=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}ld.lld AR=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-ar NM=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-nm STRIP=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-strip OBJCOPY=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-objcopy OBJDUMP=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-objdump OBJSIZE=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-size READELF=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-readelf HOSTCC=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang HOSTCXX=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang++ HOSTAR=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-ar HOSTLD=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}ld.lld -j$(nproc --all) O=out ${{ github.event.inputs.KERNEL_CONFIGS }}
                 else
                     exit 2
@@ -314,8 +309,8 @@ jobs:
             export PATH=$CLANG_DIR:$PATH
 
             # Compile using make
-            if [ ${{ github.event.inputs.KERNEL_COMPILER }} == 'Clang/LLVM' ]; then
-                if [ ! -z ${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }} ]; then
+            if [ "${{ github.event.inputs.KERNEL_COMPILER }}" == 'Clang/LLVM' ]; then
+                if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
                     make ARCH=${{ github.event.inputs.KERNEL_ARCH }} SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_COMPAT=arm-linux-gnueabi- CC=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang LLVM=1 LLVM_IAS=1 LD=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}ld.lld AR=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-ar NM=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-nm STRIP=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-strip OBJCOPY=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-objcopy OBJDUMP=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-objdump OBJSIZE=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-size READELF=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-readelf HOSTCC=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang HOSTCXX=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}clang++ HOSTAR=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}llvm-ar HOSTLD=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}ld.lld -j$(nproc --all) O=out > ../build.log 2>&1
                 else
                     exit 3
