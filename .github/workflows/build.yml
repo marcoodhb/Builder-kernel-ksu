@@ -55,32 +55,28 @@ jobs:
         - name: Checkout Workflow Repository
           uses: actions/checkout@v4
 
-        - name: 'Prepare repository string for checkout'
+        - name: 'Prepare Repository String'
           id: repo_prep
           run: |
+            # The actions/checkout action requires the repository in {owner}/{repo} format.
+            # This step converts the full URL input into the correct format.
             REPO_URL="${{ github.event.inputs.KERNEL_GIT }}"
-            # Remove the 'https://github.com/' prefix
             REPO_PATH=${REPO_URL#https://github.com/}
-            # Remove the '.git' suffix
             REPO_PATH=${REPO_PATH%.git}
             echo "repo_path=${REPO_PATH}" >> $GITHUB_OUTPUT
 
-        - name: 'Clone Kernel Source using official action'
+        - name: 'Clone Kernel Source'
           uses: actions/checkout@v4
           with:
-            # Use the clean 'owner/repo' string from the previous step
+            # Use the clean 'owner/repo' string from the previous step.
             repository: ${{ steps.repo_prep.outputs.repo_path }}
-            
-            # This is your Personal Access Token
+            # Use the Personal Access Token for authentication.
             token: ${{ secrets.CLONE_TOKEN }}
-            
-            # The branch to check out
+            # Check out the specified branch.
             ref: ${{ github.event.inputs.KERNEL_GIT_BRANCH }}
-            
-            # Where to put the cloned repository
+            # Define the destination path for the clone.
             path: './kernel-src'
-            
-            # Equivalent to --depth=1
+            # Use a shallow clone for speed.
             fetch-depth: 1
 
         - name: 'Debloat the OS'
@@ -109,7 +105,7 @@ jobs:
             echo "Storage spaces after debloat/clean-up:"
             df -h
 
-        - name: 'Setup dependencies and environment'
+        - name: 'Setup Dependencies and Environment'
           run: |
             sudo cp /etc/apt/sources.list.d/ubuntu.sources /etc/apt/sources.list.d/ubuntu.sources~
             sudo sed -Ei 's/^Types: deb$/Types: deb deb-src/' /etc/apt/sources.list.d/ubuntu.sources
@@ -158,12 +154,12 @@ jobs:
             make -j$(nproc --all)
             sudo make -j$(nproc --all) install
 
-        - name: 'Clone any submodules if present'
+        - name: 'Clone Submodules'
           working-directory: './kernel-src'
           run: |
             git submodule init; git submodule update
 
-        - name: 'Patch KernelSU repository into the kernel source'
+        - name: 'Patch KernelSU'
           working-directory: './kernel-src'
           run: |
             [ -L "drivers/kernelsu" ] && rm "drivers/kernelsu" && echo "[-] Symlink removed."
@@ -173,13 +169,10 @@ jobs:
                 rm -rf "./KernelSU*" && echo "[-] KernelSU directory deleted."
             fi
             if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
-                echo "--- KernelSU git link and branch points to a valid git repo! ---"
+                echo "--- KernelSU git link is valid, cloning... ---"
             	git clone ${{ github.event.inputs.KSU_GIT }} -b ${{ github.event.inputs.KSU_GIT_BRANCH }} ./KernelSU
-            elif git ls-remote ${{ github.event.inputs.KSU_GIT }} > /dev/null; then
-                echo "--- KernelSU git link points to a valid git repo, but the branch specified is invalid, please specify the branch properly! ---"
-                exit 1
             else
-                echo "--- KernelSU git link and branch points to an invalid git repo, please specify them properly! ---"
+                echo "--- KernelSU git link or branch is invalid. Aborting. ---"
                 exit 1
             fi
             ln -sf ../KernelSU/kernel ./drivers/kernelsu
@@ -187,7 +180,7 @@ jobs:
             grep -q "source \"drivers/kernelsu/Kconfig\"" "./drivers/Kconfig" || sed -i "/endmenu/i\source \"drivers/kernelsu/Kconfig\"" "./drivers/Kconfig" && echo "[+] Modified Kconfig."
             echo '[+] Done.'
 
-        - name: 'Patch KernelSU manual scope-minimized hooks into the kernel source'
+        - name: 'Patch Scope-Minimized Hooks'
           working-directory: './kernel-src'
           run: |
             git clone --depth=1 https://github.com/marcoodhb/kernelsu-coccinelle.git
@@ -195,17 +188,17 @@ jobs:
             rm -rf ./kernelsu-coccinelle/
             rm -rf ./android/abi_gki_protected_exports*
 
-        - name: 'Verify P'
+        - name: 'Verify Compiler Toolchain'
           run: |
             shopt -s globstar
             TOOLCHAIN_DIR=$(realpath ~/**/compiler-toolchain)/${{ github.event.inputs.KERNEL_COMPILER_PREFIX }}
              if [ ! -d "$TOOLCHAIN_DIR" ]; then
-              echo " ERROR: El toolchain no existe en la ruta $TOOLCHAIN_DIR"
+              echo "ERROR: Toolchain directory not found at $TOOLCHAIN_DIR"
               exit 1
              fi
              ls -l $TOOLCHAIN_DIR
 
-        - name: 'Generate the kernel .config file'
+        - name: 'Generate Kernel Config'
           working-directory: './kernel-src'
           run: |
             shopt -s globstar
@@ -224,7 +217,7 @@ jobs:
             echo 'CONFIG_KSU_WITH_KPROBES=n' >> out/.config
             echo 'CONFIG_KSU_SUSFS_SUS_SU=n' >> out/.config
             
-        - name: 'Build kernel'
+        - name: 'Build Kernel'
           working-directory: './kernel-src'
           run: |
             shopt -s globstar
@@ -238,14 +231,14 @@ jobs:
                 fi
             fi
 
-        - name: 'Upload error log on failure'
+        - name: 'Upload Error Log on Failure'
           if: failure()
           uses: actions/upload-artifact@v4
           with:
             name: build-error-log
             path: ./build.log
         
-        - name: 'Organize boot artifacts'
+        - name: 'Organize Boot Artifacts'
           working-directory: './kernel-src'
           run: |
             ARTIFACT_DIR="../kernel-build-artifacts-${{ github.event.inputs.KERNEL_ARCH }}-$(date +"%Y%m%d")"
@@ -253,7 +246,7 @@ jobs:
             cp -rf out/arch/${{ github.event.inputs.KERNEL_ARCH }}/boot/* "$ARTIFACT_DIR/"
             cp out/.config "$ARTIFACT_DIR/kernel.config"
         
-        - name: 'Upload kernel build artifacts'
+        - name: 'Upload Kernel Build Artifacts'
           uses: actions/upload-artifact@v4
           with:
             name: kernel-build-artifacts
