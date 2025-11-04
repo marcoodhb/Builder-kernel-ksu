@@ -58,8 +58,8 @@ jobs:
         - name: 'Clone Kernel Source using official action'
           uses: actions/checkout@v4
           with:
-            # This specifies which repository to clone. We use the input from the user.
-            repository: ${{ github.event.inputs.KERNEL_GIT }}
+            # This corrects the URL to the required {owner}/{repo} format.
+            repository: ${{ replace(replace(github.event.inputs.KERNEL_GIT, 'https://github.com/', ''), '.git', '') }}
             
             # This is your Personal Access Token.
             token: ${{ secrets.CLONE_TOKEN }}
@@ -92,7 +92,7 @@ jobs:
                 libfreetype6 libfreetype6-dev libfontconfig1 libfontconfig1-dev \
                 snmp pollinate libpq-dev postgresql-client powershell ruby-full \
                 sphinxsearch subversion mongodb-org microsoft-edge-stable || true
-            sudo apt-get purge -y $(dpkg-query -W -f='${binary:Package}\n' | grep -E '^mysql|^php|^dotnet') || true
+            sudo apt-get purge -y $(dpk-query -W -f='${binary:Package}\n' | grep -E '^mysql|^php|^dotnet') || true
             sudo apt-get autoremove -y
             sudo apt-get autoclean -y
             echo "some packages purged"
