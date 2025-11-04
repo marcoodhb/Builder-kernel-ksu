@@ -57,39 +57,33 @@ jobs:
           with:
            fetch-depth: 0
 
-        - name: 'Validate workflow options'
+        - name: 'Configure Git to use PAT'
           env:
             CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
           run: |
-            # Clean the token from any hidden characters like newlines
-            CLEAN_TOKEN=$(echo "$CLONE_TOKEN" | tr -d '\n\r')
-            
-            if [ -z "$CLEAN_TOKEN" ]; then
+            if [ -z "$CLONE_TOKEN" ]; then
               echo "Error: CLONE_TOKEN secret is not set or empty."
               exit 1
             fi
+            # This command tells git to automatically use the token for any github.com URL.
+            # It's the standard and most reliable method.
+            git config --global url."https://x-access-token:${CLONE_TOKEN}@github.com/".insteadOf "https://github.com/"
+            echo "Git configured to use the token for authentication on github.com URLs."
 
-            KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
-            if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-                echo "GitHub repo detected. Using token to validate."
-                # Build the URL with the clean token
-                KERNEL_URL="https://x-access-token:${CLEAN_TOKEN}@${KERNEL_URL#https://}"
-                # Safe debugging: print the URL with the token masked
-                MASKED_URL="https://x-access-token:***@${{ github.event.inputs.KERNEL_GIT }}#https://}"
-                echo "Validating with URL: ${MASKED_URL}"
-            fi
-
+        - name: 'Validate workflow options'
+          run: |
+            # With git configured, we can use the original URL directly.
+            # The token will be applied automatically by git in the background.
             if
-                if git ls-remote "$KERNEL_URL" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
+                if git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
                     echo "Kernel source seems ok."
-                elif git ls-remote "$KERNEL_URL" > /dev/null; then
+                elif git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" > /dev/null; then
                     echo "Repo is valid, but branch is wrong. Aborting."
                     exit 1
                 else
                     echo "Invalid kernel source. Check URL or token permissions. Aborting."
                     exit 1
                 fi
-                # ... el resto de las validaciones siguen igual ...
                 if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
                     echo "KernelSU source seems ok."
                 elif git ls-remote ${{ github.event.inputs.KSU_GIT }} > /dev/null; then
@@ -187,28 +181,9 @@ jobs:
             sudo make -j$(nproc --all) install
 
         - name: 'Clone kernel source'
-          env:
-            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
           run: |
-            # Clean the token from any hidden characters like newlines
-            CLEAN_TOKEN=$(echo "$CLONE_TOKEN" | tr -d '\n\r')
-
-            if [ -z "$CLEAN_TOKEN" ]; then
-              echo "Error: CLONE_TOKEN secret is not set or empty."
-              exit 1
-            fi
-
-            KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
-            if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-              echo "GitHub repo detected. Using token for authentication."
-              # Build the URL with the clean token
-              KERNEL_URL="https://x-access-token:${CLEAN_TOKEN}@${KERNEL_URL#https://}"
-            else
-              echo "External repo detected."
-            fi
-            
-            echo "Starting kernel clone..."
-            git clone --depth=1 -b "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" "$KERNEL_URL" ./kernel-src
+            echo "Starting kernel clone... Git will use the configured token automatically."
+            git clone --depth=1 -b "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" "${{ github.event.inputs.KERNEL_GIT }}" ./kernel-src
             
             if [ $? -ne 0 ]; then
               echo "Clone failed. Check URL, branch or token permissions."
@@ -316,4 +291,4 @@ jobs:
           uses: actions/upload-artifact@v4
           with:
             name: kernel-build-artifacts
-            path: ./kernel-build-artifacts*/```
+            path: ./kernel-build-artifacts*/
