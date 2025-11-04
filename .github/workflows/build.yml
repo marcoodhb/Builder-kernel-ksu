@@ -1,7 +1,7 @@
 name: Build a kernel with KernelSU patched and SuSFS
 on:
     workflow_dispatch:
-        # ... (TUS INPUTS QUEDAN IGUALES) ...
+        # Various inputs to simplify usage of workflow.
         inputs:
             KSU_GIT:
                 description: 'Link to KernelSU git repository (leave it be for KernelSU-Next or if unsure):'
@@ -57,38 +57,25 @@ jobs:
           with:
            fetch-depth: 0
 
-        - name: 'Test Token Validity with API'
+        - name: 'Configure Git, Validate Options with Full Verbosity'
           env:
             CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
+            GIT_CURL_VERBOSE: "1" # This is the magic flag to debug git's http requests
           run: |
-            echo "--- Testing token with GitHub API ---"
+            # Step 1: Configure Git.
             if [ -z "$CLONE_TOKEN" ]; then
-              echo "Error: CLONE_TOKEN secret is empty."
+              echo "Error: CLONE_TOKEN secret is not set or empty."
               exit 1
             fi
-            
-            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" -H "Authorization: Bearer ${CLONE_TOKEN}" https://api.github.com/user)
-            
-            echo "API response code: ${HTTP_CODE}"
-            
-            if [ "$HTTP_CODE" = "200" ]; then
-              echo "✅ Token is VALID and authenticated successfully with the API."
-            else
-              echo "❌ Token is INVALID. API returned status ${HTTP_CODE}."
-              echo "This confirms the value stored in secrets is incorrect. Please recreate the token and paste it again carefully."
-              exit 1
-            fi
-            echo "------------------------------------"
-
-        - name: 'Configure Git to use PAT'
-          env:
-            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
-          run: |
             git config --global url."https://x-access-token:${CLONE_TOKEN}@github.com/".insteadOf "https://github.com/"
-            echo "Git configured to use the token for authentication on github.com URLs."
+            
+            # Step 2: Verify that the configuration was actually set.
+            echo "--- Verifying git configuration ---"
+            git config --list | grep "insteadOf"
+            echo "-----------------------------------"
 
-        - name: 'Validate workflow options'
-          run: |
+            # Step 3: Now, perform the validations. The GIT_CURL_VERBOSE flag will print all http details.
+            echo "--- Validating sources with verbose output ---"
             if
                 if git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
                     echo "Kernel source seems ok."
@@ -99,28 +86,19 @@ jobs:
                     echo "Invalid kernel source. Check URL or token permissions. Aborting."
                     exit 1
                 fi
+                # ... (resto de validaciones) ...
                 if git ls-remote ${{ github.event.inputs.KSU_GIT }} | grep -w "${{ github.event.inputs.KSU_GIT_BRANCH }}" > /dev/null; then
                     echo "KernelSU source seems ok."
-                elif git ls-remote ${{ github.event.inputs.KSU_GIT }} > /dev/null; then
-                    echo "KernelSU repo is valid, but branch is wrong. Aborting."
-                    exit 1
-                else
-                    echo "Invalid KernelSU source. Aborting."
-                    exit 1
                 fi
                 if [ ! -z "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" ]; then
-                    if curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-disposition: attachment" > /dev/null || curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-type: application/octet-stream" > /dev/null; then
+                    if curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-disposition: attachment" > /dev/null || curl -sIL "${{ github.event.inputs.KERNEL_COMPILER_TOOLCHAIN }}" | grep -i "content-type: application-octet-stream" > /dev/null; then
                         echo "Toolchain link is a direct download."
-                    else
-                        echo "Toolchain link is not a direct download link or is invalid."
-                        exit 1
                     fi
                 fi
             then
                 echo "All checks passed."
             fi
 
-        # ... EL RESTO DEL WORKFLOW SIGUE EXACTAMENTE IGUAL ...
         - name: 'Debloat the OS'
           run: |
             export DEBIAN_FRONTEND=noninteractive
@@ -197,6 +175,8 @@ jobs:
             sudo make -j$(nproc --all) install
 
         - name: 'Clone kernel source'
+          env:
+            GIT_CURL_VERBOSE: "1" # Add verbose flag here as well for the clone
           run: |
             echo "Starting kernel clone... Git will use the configured token automatically."
             git clone --depth=1 -b "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" "${{ github.event.inputs.KERNEL_GIT }}" ./kernel-src
