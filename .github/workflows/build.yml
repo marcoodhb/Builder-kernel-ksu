@@ -58,12 +58,14 @@ jobs:
            fetch-depth: 0
 
         - name: 'Validate workflow options'
+          env:
+            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
           run: |
             KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
             # If it's a github repo, inject the Personal Access Token for validation.
             if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-                echo "GitHub repo detected. Using CLONE_TOKEN to validate."
-                KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.CLONE_TOKEN }}@#")
+                echo "GitHub repo detected. Using token to validate."
+                KERNEL_URL="https://x-access-token:${CLONE_TOKEN}@${KERNEL_URL#https://}"
             fi
 
             if
@@ -196,13 +198,15 @@ jobs:
             sudo make -j$(nproc --all) install
 
         - name: 'Clone kernel source'
+          env:
+            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
           run: |
             KERNEL_URL="${{ github.event.inputs.KERNEL_GIT }}"
 
             # If it's a github repo, inject the Personal Access Token for authentication.
             if [[ "$KERNEL_URL" == *"github.com"* ]]; then
-              echo "GitHub repo detected. Using CLONE_TOKEN for authentication."
-              KERNEL_URL=$(echo "$KERNEL_URL" | sed "s#https://#https://x-access-token:${{ secrets.CLONE_TOKEN }}@#")
+              echo "GitHub repo detected. Using token for authentication."
+              KERNEL_URL="https://x-access-token:${CLONE_TOKEN}@${KERNEL_URL#https://}"
             else
               echo "External repo detected."
             fi
