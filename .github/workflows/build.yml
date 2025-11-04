@@ -57,30 +57,20 @@ jobs:
           with:
            fetch-depth: 0
 
-        - name: 'Debug Secret Integrity'
+        - name: 'Configure Git and Validate Options'
           env:
             CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
           run: |
-            echo "--- Secret Integrity Check ---"
+            # Step 1: Configure Git to use the PAT. This config persists for the rest of the job.
             if [ -z "$CLONE_TOKEN" ]; then
-              echo "Error: CLONE_TOKEN secret is empty or not set."
+              echo "Error: CLONE_TOKEN secret is not set or empty."
               exit 1
             fi
-            echo "Secret length as seen by workflow: ${#CLONE_TOKEN}"
-            echo "If length is not 40, the secret is likely corrupted."
-            echo "--------------------------------"
-
-        - name: 'Configure Git to use PAT'
-          env:
-            CLONE_TOKEN: ${{ secrets.CLONE_TOKEN }}
-          run: |
-            # This command tells git to automatically use the token for any github.com URL.
             git config --global url."https://x-access-token:${CLONE_TOKEN}@github.com/".insteadOf "https://github.com/"
             echo "Git configured to use the token for authentication on github.com URLs."
 
-        - name: 'Validate workflow options'
-          run: |
-            # With git configured, we use the original URL. Git applies the token automatically.
+            # Step 2: Now, perform the validations. Git will use the token automatically.
+            echo "--- Validating sources ---"
             if
                 if git ls-remote "${{ github.event.inputs.KERNEL_GIT }}" | grep -w "${{ github.event.inputs.KERNEL_GIT_BRANCH }}" > /dev/null; then
                     echo "Kernel source seems ok."
