@@ -211,11 +211,17 @@ jobs:
                     exit 2
                 fi
             fi
-            echo 'CONFIG_LOCALVERSION_AUTO=n' >> out/.config
+            
             sed -i '/res="$res${scm:++}"/d' scripts/setlocalversion
-            echo 'CONFIG_KPROBES=n' >> out/.config
-            echo 'CONFIG_KSU_WITH_KPROBES=n' >> out/.config
-            echo 'CONFIG_KSU_SUSFS_SUS_SU=n' >> out/.config
+            ./scripts/config --file out/.config --disable CONFIG_LOCALVERSION_AUTO
+            ./scripts/config --file out/.config --disable CONFIG_KPROBES
+            ./scripts/config --file out/.config --disable CONFIG_KSU_WITH_KPROBES
+            ./scripts/config --file out/.config --disable CONFIG_KSU_SUSFS_SUS_SU
+            ./scripts/config --file out/.config --enable CONFIG_KSU
+            ./scripts/config --file out/.config --enable CONFIG_KSU_MANUAL_HOOK
+            ./scripts/config --file out/.config --enable CONFIG_KSU_MANUAL_HOOK_AUTO_INPUT_HOOK
+            ./scripts/config --file out/.config --enable CONFIG_KSU_MANUAL_HOOK_AUTO_SETUID_HOOK
+            ./scripts/config --file out/.config --enable CONFIG_KSU_MANUAL_HOOK_AUTO_INITRC_HOOK
             
         - name: 'Build Kernel'
           working-directory: './kernel-src'
